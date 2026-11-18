@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0052cc">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Calculadora de Horas</title>
+<style>
+  * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  body { margin: 0; padding: 12px; background: #f2f4f8; color: #1c1e21; }
+  h2 { margin: 0 0 12px; font-size: 1.2rem; text-align: center; color: #0052cc; }
+  .card { background: #fff; border-radius: 10px; padding: 12px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.06); }
+  .card-title { font-size: 0.85rem; font-weight: 700; color: #555; margin-bottom: 8px; text-transform: uppercase; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .field { flex: 1; display: flex; flex-direction: column; }
+  label { font-size: 0.8rem; margin-bottom: 3px; color: #444; font-weight: 600; }
+  input {
+    width: 100%; padding: 10px; font-size: 1.15rem; text-align: center;
+    border: 1px solid #ccd0d5; border-radius: 8px; background: #fafbfc;
+  }
+  input:focus { outline: none; border-color: #0052cc; background: #fff; }
+  button {
+    padding: 11px 14px; font-size: 0.95rem; font-weight: 700; border: none;
+    border-radius: 8px; cursor: pointer; background: #0052cc; color: #fff;
+  }
+  button:active { opacity: 0.85; }
+  button.secondary { background: #e4e6eb; color: #1c1e21; }
+  button.danger { background: #ffe5e5; color: #d93025; }
+  button:disabled { opacity: 0.4; pointer-events: none; }
+  .btn-add { align-self: flex-end; height: 43px; }
+  .actions { display: flex; gap: 8px; margin-bottom: 10px; }
+  .actions button { flex: 1; font-size: 0.85rem; padding: 10px 6px; }
+  .table-wrap { max-height: 220px; overflow-y: auto; border: 1px solid #e4e6eb; border-radius: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th { position: sticky; top: 0; background: #f0f2f5; padding: 8px; text-align: left; font-size: 0.8rem; }
+  td { padding: 8px; border-top: 1px solid #eee; }
+  tr.selected { background: #e6f0ff; }
+  .total-box { background: #0052cc; color: #fff; border-radius: 10px; padding: 14px; }
+  .total-main { font-size: 1.3rem; font-weight: 800; }
+  .total-sub { font-size: 0.88rem; opacity: 0.9; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+  <h2>Calculadora de Horas y Minutos</h2>
+
+  <!-- OPCIÓN 1: TRAMO -->
+  <div class="card">
+    <div class="card-title">1. Entrada y Salida (ej. 1416 o 16)</div>
+    <div class="row">
+      <div class="field">
+        <label for="inicio">Entrada</label>
+        <input type="text" id="inicio" inputmode="numeric" placeholder="HH:MM" maxlength="5">
+      </div>
+      <div class="field">
+        <label for="fin">Salida</label>
+        <input type="text" id="fin" inputmode="numeric" placeholder="HH:MM" maxlength="5">
+      </div>
+      <button class="btn-add" onclick="agregarTramo()">Añadir</button>
+    </div>
+  </div>
+
+  <!-- OPCIÓN 2: DIRECTO -->
+  <div class="card">
+    <div class="card-title">2. Duración directa</div>
+    <div class="row">
+      <div class="field">
+        <label for="horas">Horas</label>
+        <input type="number" id="horas" inputmode="numeric" placeholder="0" min="0">
+      </div>
+      <div class="field">
+        <label for="minutos">Minutos</label>
+        <input type="number" id="minutos" inputmode="numeric" placeholder="0" min="0">
+      </div>
+      <button class="btn-add" onclick="agregarDirecto()">Añadir</button>
+    </div>
+  </div>
+
+  <!-- BOTONES DE GESTIÓN -->
+  <div class="actions">
+    <button id="btnRepetir" class="secondary" onclick="repetirUltimo()" disabled>Repetir Último</button>
+    <button id="btnEliminar" class="danger" onclick="eliminarSeleccionado()" disabled>Borrar Fila</button>
+    <button class="secondary" onclick="limpiarTodo()">Limpiar</button>
+  </div>
+
+  <!-- LISTA -->
+  <div class="card" style="padding: 6px;">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Detalle / Tramo</th>
+            <th>Tiempo</th>
+            <th>H,MM</th>
+          </tr>
+        </thead>
+        <tbody id="lista"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- TOTAL -->
+  <div class="total-box">
+    <div class="total-main" id="totalReal">Total: 0 h y 0 min</div>
+    <div class="total-sub" id="totalDecimal">Decimal: 0,00 h &nbsp;|&nbsp; Total minutos: 0 min</div>
+  </div>
+
+<script>
+  let registros = [];
+  let ultimoRegistro = null;
+  let indiceSeleccionado = null;
+
+  const inInicio = document.getElementById('inicio');
+  const inFin = document.getElementById('fin');
+
+  function configurarMascara(input, esInicio) {
+    input.addEventListener('input', (e) => {
+      if (e.inputType && e.inputType.startsWith('delete')) return;
+
+      let val = input.value.replace(/[^\d:]/g, '');
+      if (!val.includes(':') && val.length === 2) {
+        val = val + ':';
+      } else if (!val.includes(':') && val.length > 2) {
+        val = val.slice(0, 2) + ':' + val.slice(2, 4);
+      }
+      input.value = val.slice(0, 5);
+
+      if (input.value.length === 5 && input.value.includes(':')) {
+        if (esInicio) {
+          inFin.focus();
+        } else {
+          agregarTramo();
+        }
+      }
+    });
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (esInicio) inFin.focus();
+        else agregarTramo();
+      }
+    });
+  }
+
+  configurarMascara(inInicio, true);
+  configurarMascara(inFin, false);
+
+  function parsearHora(texto) {
+    texto = texto.trim().replace(/[.,]/g, ':');
+    if (texto.endsWith(':')) texto += '00';
+    if (!texto.includes(':')) {
+      if (!/^\d+$/.test(texto)) return null;
+      if (texto.length <= 2) texto += ':00';
+      else if (texto.length === 3) texto = texto[0] + ':' + texto.slice(1);
+      else if (texto.length === 4) texto = texto.slice(0, 2) + ':' + texto.slice(2);
+      else return null;
+    }
+    const partes = texto.split(':');
+    if (partes.length !== 2) return null;
+    const h = parseInt(partes[0], 10);
+    const m = parseInt(partes[1], 10);
+    if (isNaN(h) || isNaN(m) || h < 0 || h > 23 || m < 0 || m > 59) return null;
+    return h * 60 + m;
+  }
+
+  function agregarTramo() {
+    if (!inInicio.value || !inFin.value) return;
+    const minIni = parsearHora(inInicio.value);
+    let minFin = parsearHora(inFin.value);
+
+    if (minIni === null || minFin === null) {
+      alert('Formato no válido. Usa HH:MM o solo la hora (ej. 16).');
+      return;
+    }
+    if (minFin < minIni) minFin += 24 * 60;
+
+    const diff = minFin - minIni;
+    const h1 = String(Math.floor(minIni / 60)).padStart(2, '0');
+    const m1 = String(minIni % 60).padStart(2, '0');
+    const h2 = String(Math.floor((minFin % 1440) / 60)).padStart(2, '0');
+    const m2 = String(minFin % 60).padStart(2, '0');
+
+    registrar(`De ${h1}:${m1} a ${h2}:${m2}`, diff);
+    inInicio.value = '';
+    inFin.value = '';
+    inInicio.focus();
+  }
+
+  function agregarDirecto() {
+    const h = parseInt(document.getElementById('horas').value || '0', 10);
+    const m = parseInt(document.getElementById('minutos').value || '0', 10);
+    if (h < 0 || m < 0 || (h === 0 && m === 0)) return;
+
+    registrar(`Directo (${h}h ${m}m)`, h * 60 + m);
+    document.getElementById('horas').value = '';
+    document.getElementById('minutos').value = '';
+  }
+
+  function registrar(detalle, minutos) {
+    registros.push({ detalle, minutos });
+    ultimoRegistro = { detalle, minutos };
+    indiceSeleccionado = null;
+    renderizar();
+  }
+
+  function repetirUltimo() {
+    if (ultimoRegistro) registrar(ultimoRegistro.detalle, ultimoRegistro.minutos);
+  }
+
+  function eliminarSeleccionado() {
+    if (indiceSeleccionado === null) return;
+    registros.splice(indiceSeleccionado, 1);
+    indiceSeleccionado = null;
+    ultimoRegistro = registros.length ? registros[registros.length - 1] : null;
+    renderizar();
+  }
+
+  function limpiarTodo() {
+    registros = [];
+    ultimoRegistro = null;
+    indiceSeleccionado = null;
+    renderizar();
+  }
+
+  function renderizar() {
+    const tbody = document.getElementById('lista');
+    tbody.innerHTML = '';
+
+    registros.forEach((r, idx) => {
+      const h = Math.floor(r.minutos / 60);
+      const m = String(r.minutos % 60).padStart(2, '0');
+      const tr = document.createElement('tr');
+      if (idx === indiceSeleccionado) tr.className = 'selected';
+      tr.innerHTML = `<td>${r.detalle}</td><td>${h} h ${m} m</td><td>${h},${m}</td>`;
+      tr.onclick = () => {
+        indiceSeleccionado = (indiceSeleccionado === idx) ? null : idx;
+        renderizar();
+      };
+      tbody.appendChild(tr);
+    });
+
+    const totalMin = registros.reduce((acc, r) => acc + r.minutos, 0);
+    const th = Math.floor(totalMin / 60);
+    const tm = totalMin % 60;
+    const dec = (totalMin / 60).toFixed(2).replace('.', ',');
+
+    document.getElementById('totalReal').textContent = `Total: ${th} h y ${tm} min`;
+    document.getElementById('totalDecimal').innerHTML = `Decimal: ${dec} h &nbsp;|&nbsp; Total minutos: ${totalMin} min`;
+    document.getElementById('btnRepetir').disabled = !ultimoRegistro;
+    document.getElementById('btnEliminar').disabled = indiceSeleccionado === null;
+  }
+</script>
+</body>
+</html>
